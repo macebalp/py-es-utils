@@ -1,6 +1,8 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
 
 from argparse import ArgumentParser
+from lib.reloader import Reloader
 
 
 def get_params():
@@ -51,6 +53,10 @@ def main():
     :return:
     """
     args = get_params()
+
+    reloader = Reloader(args.host, args.port)
+    reloader.reload(args.source_index, args.target_index);
+
     pass
 
 
