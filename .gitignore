@@ -1,0 +1,55 @@
+## Invenio API git ignore files    #
+##                                 #
+####################################
+
+#byte-compiled / optimized / dll files
+__pycache__/
+*.py[cod]
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+env/
+bin/
+build/
+develop-eggs/
+dist/
+eggs/
+lib/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Eclipse / PyDev
+.metadata/
+.pydevproject
+.project
+.settings/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+
+# Translations
+*.mo
+
+# Sphinx documentation
+docs/_build/
+
+# JMeter 
+jmeter/
+*.log
+
+# PyCharm
+.idea*
+
