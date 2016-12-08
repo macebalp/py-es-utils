@@ -3,7 +3,7 @@
 
 from argparse import ArgumentParser
 from elasticsearch import Elasticsearch
-from elasticsearch.helpers import scan, bulk
+from elasticsearch.helpers import scan, parallel_bulk, streaming_bulk
 from itertools import islice
 import re
 from random import randint
@@ -51,6 +51,10 @@ def get_params():
                         required=False, default=None,
                         help="Query to narrow documents in source index")
 
+    parser.add_argument("--num-threads", dest="num_threads",
+                        required=False, default=1,
+                        help="Number of threads used for indexing")
+
     parser.add_argument("--only-metadata", dest="only_metadata",
                         action="store_true", required=False, default=False,
                         help="Only create target index if it doesn't exists")
@@ -94,6 +98,7 @@ def assign_routing(hit, routing):
 
 def process_hit(hit):
     #hit["_source"]["publication_id"] = long(hit["_source"]['id']['frontiers'])
+    #hit["_id"] = randint(0, 100000000)
     pass
 
 
@@ -105,13 +110,34 @@ def process_scan_response(scan_result_iter, new_index, routing=None):
         yield hit
 
 
-def realod_es(source_client, source_index, source_query, target_client, target_index, limit=None, routing=None):
+def realod_es(source_client, source_index, source_query, target_client, target_index, limit=None, routing=None,
+              num_threads=1):
     scan_result_iter = scan(source_client, index=source_index, query=source_query)
 
     if limit is not None:
         scan_result_iter = islice(scan_result_iter, 0, limit)
 
-    return bulk(target_client, process_scan_response(scan_result_iter, target_index, routing))
+    gen = None
+    if num_threads == 1:
+        gen = streaming_bulk(target_client, process_scan_response(scan_result_iter, target_index, routing),
+                             raise_on_error=False)
+    else:
+        gen = parallel_bulk(target_client, process_scan_response(scan_result_iter, target_index, routing),
+                            raise_on_error=False)
+
+    #TODO: process failed items
+    success = 0
+    failed = 0
+    failed_ids = []
+    for ok, item in gen:
+        # go through request-reponse pairs and detect failures
+        if not ok:
+            failed += 1
+            failed_ids.append(item['_id'])
+        else:
+            success += 1
+
+    return success, failed, failed_ids
 
 
 def get_query_or_load_from_file(query):
@@ -146,7 +172,7 @@ def main():
     source_query = get_query_or_load_from_file(source_query)
 
     results = realod_es(source_es_client, args.source_index, source_query, target_es_client, args.target_index,
-                        args.limit, args.target_routing)
+                        args.limit, args.target_routing, args.num_threads)
 
     print(results)
 
