@@ -7,6 +7,7 @@ from elasticsearch.helpers import scan, parallel_bulk, streaming_bulk
 from itertools import islice
 import re
 from random import randint
+import datetime
 
 def get_params():
     # type: () -> object
@@ -52,7 +53,7 @@ def get_params():
                         help="Query to narrow documents in source index")
 
     parser.add_argument("--num-threads", dest="num_threads",
-                        required=False, default=1,
+                        required=False, default=1, type=int,
                         help="Number of threads used for indexing")
 
     parser.add_argument("--only-metadata", dest="only_metadata",
@@ -118,12 +119,12 @@ def realod_es(source_client, source_index, source_query, target_client, target_i
         scan_result_iter = islice(scan_result_iter, 0, limit)
 
     gen = None
-    if num_threads == 1:
+    if num_threads <= 1:
         gen = streaming_bulk(target_client, process_scan_response(scan_result_iter, target_index, routing),
                              raise_on_error=False)
     else:
         gen = parallel_bulk(target_client, process_scan_response(scan_result_iter, target_index, routing),
-                            raise_on_error=False)
+                            raise_on_error=False, thread_count=num_threads)
 
     #TODO: process failed items
     success = 0
@@ -159,22 +160,26 @@ def main():
 
     source_es_client = get_es_client(args.source_host, args.source_port, args.username, args.password)
     target_es_client = get_es_client(args.target_host, args.target_port, args.target_username, args.target_password)
+    
+    start_time = datetime.datetime.now()
+    try:
+   
+        create_index_if_not_exists(target_client=target_es_client, target_index_name=args.target_index,
+                                   source_client=source_es_client, source_index_name=args.source_index)
 
-    create_index_if_not_exists(target_client=target_es_client, target_index_name=args.target_index,
-                               source_client=source_es_client, source_index_name=args.source_index)
+        if args.only_metadata:
+            print("--only-metadata option used, no data will be migrated")
+            return
 
-    if args.only_metadata:
-        print("--only-metadata option used, no data will be migrated")
-        return
+        source_query = args.query  # "@/tmp/query"#'{"query" : {"match" : {"is_internal" : true}}}'
 
-    source_query = args.query  # "@/tmp/query"#'{"query" : {"match" : {"is_internal" : true}}}'
+        source_query = get_query_or_load_from_file(source_query)
 
-    source_query = get_query_or_load_from_file(source_query)
-
-    results = realod_es(source_es_client, args.source_index, source_query, target_es_client, args.target_index,
-                        args.limit, args.target_routing, args.num_threads)
-
-    print(results)
+        results = realod_es(source_es_client, args.source_index, source_query, target_es_client, args.target_index,
+                            args.limit, args.target_routing, args.num_threads)
+        print(results)
+    finally:
+        print('Execution times was: {0}'.format(datetime.datetime.now() - start_time))
 
 
 if __name__ == '__main__':
