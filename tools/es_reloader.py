@@ -60,6 +60,11 @@ def get_params():
                         action="store_true", required=False, default=False,
                         help="Only create target index if it doesn't exists")
 
+    parser.add_argument("-cc", dest="chunk_count", type=int, required=False, default=1000,
+                        help="Number of documents in bulk operations")
+    parser.add_argument("-mcs", dest="max_chunk_size", type=int, required=False, default=1024*1024*20,
+                        help="Maximum chunk size in bytes in bulk operations")
+
     return parser.parse_args()
 
 
@@ -112,7 +117,7 @@ def process_scan_response(scan_result_iter, new_index, routing=None):
 
 
 def realod_es(source_client, source_index, source_query, target_client, target_index, limit=None, routing=None,
-              num_threads=1):
+              num_threads=1, chunk_count=1000, max_chunk_size=1024*1024*20):
     scan_result_iter = scan(source_client, index=source_index, query=source_query)
 
     if limit is not None:
@@ -121,10 +126,11 @@ def realod_es(source_client, source_index, source_query, target_client, target_i
     gen = None
     if num_threads <= 1:
         gen = streaming_bulk(target_client, process_scan_response(scan_result_iter, target_index, routing),
-                             raise_on_error=False)
+                             raise_on_error=False, chunk_size=chunk_count, max_chunk_bytes=max_chunk_size)
     else:
         gen = parallel_bulk(target_client, process_scan_response(scan_result_iter, target_index, routing),
-                            raise_on_error=False, thread_count=num_threads)
+                            raise_on_error=False, thread_count=num_threads, chunk_size=chunk_count,
+                            max_chunk_bytes=max_chunk_size)
 
     #TODO: process failed items
     success = 0
@@ -176,7 +182,7 @@ def main():
         source_query = get_query_or_load_from_file(source_query)
 
         results = realod_es(source_es_client, args.source_index, source_query, target_es_client, args.target_index,
-                            args.limit, args.target_routing, args.num_threads)
+                            args.limit, args.target_routing, args.num_threads, args.chunk_count, args.max_chunk_size)
         print(results)
     finally:
         print('Execution times was: {0}'.format(datetime.datetime.now() - start_time))
